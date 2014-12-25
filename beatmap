@@ -1,6 +1,6 @@
-.osu (beatmap) file format
+.osu (beatmap) file format - Lots of help from Blocko
 
-TimingPoints - Lots of help from Blocko
+TimingPoints
   In order from left to right:
     Time: Milliseconds
     Tempo: Positive number is a new bpm. The number is the number of
