@@ -1,0 +1,25 @@
+.osu (beatmap) file format
+
+TimingPoints - Lots of help from Blocko
+  In order from left to right:
+    Time: Milliseconds
+    Tempo: Positive number is a new bpm. The number is the number of
+           milliseconds in one beat.
+           Negative means slider velocity multiplier
+    Metre: The number is the numerator. Denominator is always 4
+    Sampleset number
+    Custom sampleset number
+    Volume %
+    Unknown
+    Kiai Time (1 for on, 0 for off)
+
+HitObjects
+
+  From left to right:
+    Column number: Key count dependent. Each column has a magic number
+    Unknown: Seems to always be 192 in osu!mania. Is different in some modes
+    Time: When the note starts
+    Type: The type of note. See notetypes.
+    Unknown
+    Extra Data: Slot for extra data. See notetypes
+    
