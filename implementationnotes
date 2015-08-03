@@ -1,0 +1,28 @@
+A note or interval is an Event
+
+Time is some arbitrary Ord type used for representing time
+
+
+
+data Event =
+    Note
+  | Interval Time
+
+
+type ApproachingNotes = [(Time, Event)]
+
+
+type ActiveNotes = Queue (Time, Event)
+
+
+For each lane, keep a list of Time-Event pairings and a queue of Time-Event pairings.
+The queue holds notes that are currently active (on the screen), and is sorted by time.
+The list is also sorted by time, and holds notes that are not on the screen yet, but
+are in the future.
+
+Each frame, the front event of the queue is checked to see if it is still visible on
+the screen. If it is a Note, the time is sufficient. If it's an Interval, the stored
+end time is checked to see if it is in the game view. If the Event is no longer
+visible, it can be removed from the queue, as it will never need to be handled again.
+(the cutoff time might be a bit later, since you might want to be able to input a note
+and get a bad score if you hit the key a bit later).
