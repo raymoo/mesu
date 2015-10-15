@@ -10,11 +10,17 @@ Stability   : experimental
 Portability : portable
 -}
 
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE RankNTypes #-}
 module Mania.Sound (
                      Track
+                   , TimeCallback
+                   , StopCallback
                    , loadFile
                    , getTrackTime
                    , playTrack
+                   , playTrackWithCB
+                   , stopTrack
                    ) where
 
 
@@ -27,9 +33,10 @@ import qualified Sound.PortAudio.Base as PA
 
 import Data.IORef
 
+import Control.Applicative
+
 import Foreign.C.Types (CDouble(..), CFloat(..), CULong(..))
 import Foreign
-
 
 newtype Track = Track (IORef (Either StoppedTrack PlayingTrack))
 
@@ -59,28 +66,35 @@ mkStreamCb info handle recTime timeInfo _ numFrames _ outPtr = do
   recTime numFrames
   return $ if readCount <= 0 then PA.Complete else PA.Continue
 
-mkFinCb :: IORef (Either StoppedTrack PlayingTrack) -> PA.FinCallback
-mkFinCb ref = do
+
+mkFinCb :: StopCallback -> IORef (Either StoppedTrack PlayingTrack) -> PA.FinCallback
+mkFinCb stopcb ref = do
   esp <- readIORef ref
-  case esp of
-   Left _ -> return ()
-   Right (PlayingTrack handle stream _ _) -> do
-     PA.closeStream stream
-     writeIORef ref (Left $ StoppedTrack handle)
+  stopcb
 
 
 -- | Time in seconds from the beginning
-getTrackTime :: Track -> IO Double
+getTrackTime :: Track -> IO (Maybe Double)
 getTrackTime (Track ref) = do
   esp <- readIORef ref
   case esp of
-   Left _ -> return 0
+   Left _ -> return Nothing
    Right (PlayingTrack _ _ time sampRate) -> do
-     return $ fromIntegral time / fromIntegral sampRate
+     return . Just $ fromIntegral time / fromIntegral sampRate
+
+type StopCallback = IO ()
+
+
+-- | Takes a 
+type TimeCallback = FrameCount -> IO ()
 
 
 playTrack :: PA.PaDeviceIndex -> Track -> IO (Maybe PA.Error)
-playTrack device (Track ref) = do
+playTrack = playTrackWithCB (const $ return ()) (return ())
+
+
+playTrackWithCB :: TimeCallback -> StopCallback -> PA.PaDeviceIndex -> Track -> IO (Maybe PA.Error)
+playTrackWithCB timecb stopcb device (Track ref) = do
   esp <- readIORef ref
   case esp of
    Left (StoppedTrack handle) -> do
@@ -101,8 +115,8 @@ playTrack device (Track ref) = do
                                       sampleRate
                                       Nothing
                                       []
-                                      (Just (mkStreamCb hInfo handle (incTime ref)))
-                                      (Just (mkFinCb ref))
+                                      (Just (mkStreamCb hInfo handle (liftA2 (>>) (incTime ref) timecb)))
+                                      (Just (mkFinCb stopcb ref))
         case possiblyStrm of
          Left err -> return (Just err)
          Right stream -> do
@@ -112,8 +126,19 @@ playTrack device (Track ref) = do
    Right (PlayingTrack handle stream _ _) -> do
      PA.stopStream stream
      writeIORef ref (Left $ StoppedTrack handle)
-     playTrack device (Track ref)
+     playTrackWithCB timecb stopcb device (Track ref)
 
+
+stopTrack :: Track -> IO (Maybe PA.Error)
+stopTrack (Track ref) = do
+  stoppedOrPlaying <- readIORef ref
+  case stoppedOrPlaying of
+   Left _ -> return Nothing
+   Right (PlayingTrack handle stream _ _) -> do
+     res <- PA.stopStream stream
+     writeIORef ref (Left (StoppedTrack handle))
+     PA.closeStream stream
+     return res
 
 
 -- | Increments time of a 'Track'. Don't use outside callback.
