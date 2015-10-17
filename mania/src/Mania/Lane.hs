@@ -26,8 +26,13 @@ module Mania.Lane (
                   , Lane(..)
                   , LaneSettings(..)
                   , TimingSettings(..)
+                  , mkLane
                   , advanceLane
                   , processInput
+
+                    -- * FRP stuff
+                  , ScoreElem(..)
+                  , laneFRP
                   ) where
 
 import qualified Data.Sequence as Seq
@@ -39,6 +44,14 @@ import Control.Monad.Tardis
 
 import Data.Foldable
 import Data.Either
+
+import Control.Arrow
+
+import Control.Monad.Writer
+
+import Reflex
+
+import Data.Maybe
 
 
 -- | Settings for timing
@@ -243,4 +256,46 @@ changeMinOn p view f g as = flip evalTardis (Nothing,Nothing) $ traverse cMO as
             return $ if Just viewed == min pastMin futMin then f a else g a
 
 
-               
+data ScoreElem t =
+  NoteScore t -- ^ Accuracy - timing differential
+  | FreshLongNote -- ^ LongNote that was never pressed
+  | LongNoteScore t t -- ^ Accuracy of both the press and release
+
+
+laneFRP :: (Reflex s, MonadHold s m, MonadFix m, Num t, Ord t) =>
+           TimingSettings t -> Dynamic s t -> Event s [LaneInput] -> Lane t ->
+           m (Dynamic s (Lane t), Event s ([ScoreElem t]))
+laneFRP timeSets times inputs initial = do
+  let bothEvs =
+        appendEvents (fmap (singList . Right) (updated times)) ((fmap.fmap) Left inputs)
+      processBoth anEv (_,lane) = do
+        curTime <- sample (current times)
+        return $ processInputsOrTime timeSets curTime anEv lane
+      scoresAndLane =
+        foldDynM processBoth ([],initial) bothEvs
+  laneDyn <- scoresAndLane >>= mapDyn snd
+  return (laneDyn, undefined)
+  where singList = (:[])
+
+
+makeScoreElem :: Num t => t -> LaneEvent t -> Maybe (ScoreElem t)
+makeScoreElem hitTime (noteTime, Note) = Just $ NoteScore (hitTime - noteTime)
+makeScoreElem hitTime (noteTime, LongNote endTime LNFresh) = Just FreshLongNote
+makeScoreElem hitTime (noteTime, LongNote endTime (LNHeld startHold)) = Just $
+                          LongNoteScore (startHold - noteTime) (hitTime - endTime)
+makeScoreElem _ _ = Nothing
+
+
+processInputsOrTime :: (Ord t, Num t) =>
+                 TimingSettings t -> t -> [Either LaneInput t] -> Lane t -> ([ScoreElem t], Lane t)
+processInputsOrTime timeSets hitTime inputs lane =
+  first catMaybes $ foldr processOne ([],lane) inputs
+  where processOne (Left input) (prevScores,lane) =
+          let (hitElems, newLane) = processInput timeSets hitTime input lane
+          in (map (makeScoreElem hitTime) hitElems ++ prevScores, newLane)
+        processOne (Right newTime) (prevScores, lane) =
+          let (deadElems, newLane) = advanceLane newTime lane
+          in (map (makeScoreElem newTime) deadElems ++ prevScores, newLane)
+
+
+
