@@ -1,3 +1,14 @@
+{-|
+Module      : Mania.App
+Description : SDL FRP app
+Copyright   : (c) Leon Medvinsky, 2015
+
+License     : GPL-3
+Maintainer  : lmedvinsky@hotmail.com
+Stability   : experimental
+Portability : portable
+-}
+
 {-# LANGUAGE RankNTypes #-}
 module Mania.App (
                    SDLApp(..)
