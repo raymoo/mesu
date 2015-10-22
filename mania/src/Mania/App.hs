@@ -5,6 +5,7 @@ module Mania.App (
                  , SDLDriver(..)
                  , Quit(..)
                  , runSDLApp
+                 , quitEvent
                  ) where
 
 
@@ -68,3 +69,7 @@ runSDLApp renderer app = runSpiderHost $ do
           case mETrigger of
            Nothing -> fireEventsAndRead [] phase
            Just eTrigger -> fireEventsAndRead [eTrigger :=> e] phase
+
+
+quitEvent :: Reflex t => Event t [SDL.Event] -> Event t Quit
+quitEvent = fmap (const Quit) . ffilter (any (\ev -> SDL.eventPayload ev == SDL.QuitEvent))
