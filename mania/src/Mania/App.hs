@@ -4,8 +4,10 @@ module Mania.App (
                  , Title(..)
                  , SDLDriver(..)
                  , Quit(..)
+                 , TimeStep(..)
                  , runSDLApp
                  , quitEvent
+                 , time
                  ) where
 
 
@@ -28,8 +30,12 @@ import Data.Maybe
 import Control.Monad.Loops
 
 
+-- | Time advancement tick in seconds
+type TimeStep = Double
+
 type SDLApp t m =
-  (Reflex t, MonadHold t m, MonadFix m) => Event t [SDL.Event] -> m (SDLDriver t)
+  (Reflex t, MonadHold t m, MonadFix m) =>
+  Event t TimeStep ->  Event t [SDL.Event] -> m (SDLDriver t)
   
 type Title = String
 
@@ -43,16 +49,31 @@ data SDLDriver t =
 
 runSDLApp :: SDL.Renderer -> (forall t m. SDLApp t m) -> IO ()
 runSDLApp renderer app = runSpiderHost $ do
-  (inputEvent, inputTriggerRef) <- newEventWithTriggerRef
 
-  driver <- runHostFrame $ app inputEvent
+  timeRef <- liftIO . newIORef =<< SDL.time
+  
+  (inputEvent, inputTriggerRef) <- newEventWithTriggerRef
+  (tickEvent, tickTriggerRef) <- newEventWithTriggerRef
+
+  driver <- runHostFrame $ app tickEvent inputEvent
 
   quitHandle <- subscribeEvent $ _driverQuit driver
 
   let picture = _driverImage driver
 
   let mainLoop = do
-        shouldQuit <- liftIO SDL.pollEvents >>= handleTrigger quitCheck inputTriggerRef
+
+        newTime <- SDL.time
+        oldTime <- liftIO $ readIORef timeRef
+
+        liftIO $ writeIORef timeRef (newTime)
+  
+        evs <- SDL.pollEvents
+
+        mInputWaiter <- handleTrigger inputTriggerRef evs
+        mTickWaiter <- handleTrigger tickTriggerRef (newTime - oldTime)
+        
+        shouldQuit <- fireEventsAndRead (catMaybes [mInputWaiter, mTickWaiter]) quitCheck
 
         SDL.clear renderer
         runHostFrame (sample picture) >>= liftIO . renderPicture renderer
@@ -64,12 +85,16 @@ runSDLApp renderer app = runSpiderHost $ do
   untilM_ (return ()) mainLoop
 
 
-  where handleTrigger phase trigger e = do
+  where handleTrigger trigger e = do
           mETrigger <- liftIO $ readIORef trigger
           case mETrigger of
-           Nothing -> fireEventsAndRead [] phase
-           Just eTrigger -> fireEventsAndRead [eTrigger :=> e] phase
+           Nothing -> return Nothing
+           Just eTrigger -> return . Just $  eTrigger :=> e
 
 
 quitEvent :: Reflex t => Event t [SDL.Event] -> Event t Quit
 quitEvent = fmap (const Quit) . ffilter (any (\ev -> SDL.eventPayload ev == SDL.QuitEvent))
+
+
+time :: (Reflex t, MonadHold t m, MonadFix m) => Event t TimeStep -> m (Dynamic t Double)
+time steps = foldDyn (+) 0 steps
