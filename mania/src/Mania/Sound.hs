@@ -21,6 +21,10 @@ module Mania.Sound (
                    , playTrack
                    , playTrackWithCB
                    , stopTrack
+
+                   , Music(..)
+                   , StopMusic(..)
+                   , MonadMusic(..)
                    ) where
 
 
@@ -38,6 +42,10 @@ import Control.Applicative
 import Foreign.C.Types (CDouble(..), CFloat(..), CULong(..))
 import Foreign
 
+import Reflex
+
+import System.IO
+
 newtype Track = Track (IORef (Either StoppedTrack PlayingTrack))
 
 
@@ -52,7 +60,7 @@ data PlayingTrack =
   PlayingTrack Snd.Handle (PA.Stream CFloat CFloat) FrameCount SampleRate
 
 
-loadFile :: String -> IO Track
+loadFile :: FilePath -> IO Track
 loadFile filename = do
   info <- Snd.getFileInfo filename
   handle <- Snd.openFile filename Snd.ReadMode info
@@ -139,6 +147,20 @@ stopTrack (Track ref) = do
      writeIORef ref (Left (StoppedTrack handle))
      PA.closeStream stream
      return res
+
+
+data Music t =
+  Music { musicEnd :: Event t ()
+        , musicTime :: Dynamic t Double
+        }
+
+
+type StopMusic = ()
+
+
+-- | Typeclass for FRP music interface
+class MonadMusic m where
+  musicPlayer :: Event t FilePath -> Event t StopMusic -> m (Event t (Music t))
 
 
 -- | Increments time of a 'Track'. Don't use outside callback.
