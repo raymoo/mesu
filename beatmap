@@ -17,7 +17,7 @@ HitObjects
 
   From left to right:
     Column number: Key count dependent. Each column has a magic number
-    Unknown: Seems to always be 192 in osu!mania. Is different in some modes
+    Unknown
     Time: When the note starts
     Type: The type of note. See notetypes.
     Unknown
