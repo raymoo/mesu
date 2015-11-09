@@ -1,6 +1,11 @@
 1   - normal note
         No extra data
 2   - Some kind of long note.
+        Extra data is in the form of L|col:x,beats,y
+          col - appears to always match the column magic number for the HitObject.
+          x - idk
+          beats - duration of the hold, in beats (the current map tempo)
+          y - idk
 5   - ??? (appears to be a normal note)
         No extra data
 128 - long note
