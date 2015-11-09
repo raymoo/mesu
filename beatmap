@@ -20,6 +20,6 @@ HitObjects
     Unknown
     Time: When the note starts (in milliseconds)
     Type: The type of note. See notetypes.
-    Unknown
+    Sound effects: Bitset with 8 = clap, 4 = finish, 2 = Whistle
     Extra Data: Slot for extra data. See notetypes
     
