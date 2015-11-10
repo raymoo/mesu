@@ -29,6 +29,7 @@ import Data.Either (rights)
 import Control.Applicative
 
 import Data.Char
+import Data.Bits
 
 
 data GeneralData = GeneralData
@@ -117,7 +118,7 @@ data SoundEffect = SEClap | SEFinish | SEWhistle
 
 data HitObject = HitObject
   { _hoColumn :: Int
-  , _hoUnknown :: () -- TODO: Figure this out
+  , _hoUnknown :: Int -- TODO: Figure this out
   , _hoTime :: Int
   , _hoType :: NoteType
   , _hoSEffects :: [SoundEffect]
@@ -139,17 +140,13 @@ parseSBLine =
   (AP.char ':' *> many (AP.char ' ') *> AP.takeWhile (AP.notInClass "\n\r"))
 
 
-spaces :: Parser String
-spaces = many AP.space
-
-
 -- | Parses the part after the section header of normal settings sections
 parseSBContent :: Parser SettingsBlock
 parseSBContent = fmap (foldr (uncurry HM.insert) HM.empty) setList
   where oneLine = fmap Right parseSBLine <|> fmap Left comment
                   <|> fail "Expected setting or comment"
                   
-        setsAndComms = (oneLine `AP.sepBy` spaces)
+        setsAndComms = (oneLine `AP.sepBy` AP.skipSpace)
                        
         setList = fmap rights setsAndComms
 
@@ -162,7 +159,7 @@ doubleToTempo x
 
 -- | Parses a block of TimingPoints (after the header)
 parseTimingPoints :: Parser [TimingPoint]
-parseTimingPoints = parseTimingPoint `AP.sepBy` spaces
+parseTimingPoints = parseTimingPoint `AP.sepBy` AP.skipSpace
 
 
 -- | Parses a single TimingPoint
@@ -205,3 +202,50 @@ parseTimingPoint = do
                      , _tpUnknown = unknown
                      , _tpKiai = kiai
                      }
+
+
+-- | Converts an 'Int' in a bitset format to a list of 'SoundEffect's.
+-- clap = 8, finish = 4, whistle = 2
+getSoundEffects :: Int -> [SoundEffect]
+getSoundEffects x = map snd . filter (\(code,_) -> code `isIn` x) $ sePairs
+  where sePairs = [ (8, SEClap), (4, SEFinish), (2, SEWhistle) ]
+        bit `isIn` num = bit .&. num /= 0
+
+
+-- | Parses a block of HitObjects (the part after the section header)
+parseHitObjects :: Parser [HitObject]
+parseHitObjects = parseHitObject `AP.sepBy` AP.skipSpace
+
+parseHitObject :: Parser HitObject
+parseHitObject = do
+  colNum <- AP.decimal
+  AP.char ','
+
+  unknown <- AP.decimal
+  AP.char ','
+
+  time <- AP.decimal
+  AP.char ','
+
+  typenum <- AP.decimal
+  AP.char ','
+
+  notetype <- case typenum of
+    1 -> return NTNormal
+    2 -> return NTLongWeird
+    5 -> return NTNormalWeird
+    128 -> return NTLong
+    _ -> fail $ "Unrecognized note type: " ++ show typenum
+
+  soundEffects <- fmap getSoundEffects AP.decimal
+  AP.char ','
+
+  extraData <- AP.takeTill (AP.inClass "\r\n")
+
+  return HitObject { _hoColumn = colNum
+                   , _hoUnknown = unknown
+                   , _hoTime = time
+                   , _hoType = notetype
+                   , _hoSEffects = soundEffects
+                   , _hoExtra = extraData
+                   }
