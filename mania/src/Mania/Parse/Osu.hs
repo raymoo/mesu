@@ -9,12 +9,26 @@ Stability   : experimental
 Portability : portable
 -}
 
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE MultiWayIf #-}
 module Mania.Parse.Osu (
                        ) where
 
-import Text.Parsec
+import qualified Data.Attoparsec.Text as AP
+import Data.Attoparsec.Text (Parser)
+
 import Data.Text (Text)
 import qualified Data.Text as T
+
+import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as HM
+
+import Data.Either (rights)
+
+import Control.Applicative
+
+import Data.Char
 
 
 data GeneralData = GeneralData
@@ -70,7 +84,7 @@ data OsuEvent = OsuEvent
               deriving (Show)
 
 data OsuTempo = NewBPM Int
-              | VelMult Int
+              | VelMult Double
               deriving (Show)
 
 
@@ -81,7 +95,7 @@ data TimingPoint = TimingPoint
   , _tpSampleset :: Int
   , _tpCustomSampleset :: Int
   , _tpVolume :: Int -- Percentage
-  , _tpUnknown :: () -- TODO: Figure this out
+  , _tpUnknown :: Int -- TODO: Figure this out
   , _tpKiai :: Bool
   }
                  deriving (Show)
@@ -111,3 +125,83 @@ data HitObject = HitObject
   }
                deriving (Show)
 
+type SettingsBlock = HashMap Text Text
+
+
+comment :: Parser Text
+comment = fmap T.pack $ AP.string "//" *> many (AP.satisfy $ AP.notInClass "\n\r")
+
+
+-- | Parses things of the form setting:value
+parseSBLine :: Parser (Text, Text)
+parseSBLine =
+  (,) <$> (AP.takeWhile1 isAlpha) <*>
+  (AP.char ':' *> many (AP.char ' ') *> AP.takeWhile (AP.notInClass "\n\r"))
+
+
+spaces :: Parser String
+spaces = many AP.space
+
+
+-- | Parses the part after the section header of normal settings sections
+parseSBContent :: Parser SettingsBlock
+parseSBContent = fmap (foldr (uncurry HM.insert) HM.empty) setList
+  where oneLine = fmap Right parseSBLine <|> fmap Left comment
+                  <|> fail "Expected setting or comment"
+                  
+        setsAndComms = (oneLine `AP.sepBy` spaces)
+                       
+        setList = fmap rights setsAndComms
+
+
+doubleToTempo :: Double -> OsuTempo
+doubleToTempo x
+  | x <= 0 = VelMult (-x)
+  | otherwise = NewBPM (round $ 60 / (x / 1000)) -- 60 seconds, 1000 ms in a s
+
+
+-- | Parses a block of TimingPoints (after the header)
+parseTimingPoints :: Parser [TimingPoint]
+parseTimingPoints = parseTimingPoint `AP.sepBy` spaces
+
+
+-- | Parses a single TimingPoint
+parseTimingPoint :: Parser TimingPoint
+parseTimingPoint = do
+  time <- AP.decimal
+  AP.char ','
+
+  tempoOrBpm <- fmap doubleToTempo AP.double
+  AP.char ','
+
+  metre <- AP.decimal
+  AP.char ','
+
+  sampleset <- AP.decimal
+  AP.char ','
+
+  customSampleset <- AP.decimal
+  AP.char ','
+
+  volume <- AP.decimal
+  AP.char ','
+
+  unknown <- AP.decimal
+  AP.char ','
+
+  kiaiNum <- AP.decimal
+
+  kiai <- if
+    | kiaiNum == 0 -> return False
+    | kiaiNum == 1 -> return True
+    | otherwise -> fail "Kiai number neither 0 nor 1"
+
+  return TimingPoint { _tpTime = time
+                     , _tpTempo = tempoOrBpm
+                     , _tpMetre = metre
+                     , _tpSampleset = sampleset
+                     , _tpCustomSampleset = customSampleset
+                     , _tpVolume = volume
+                     , _tpUnknown = unknown
+                     , _tpKiai = kiai
+                     }
