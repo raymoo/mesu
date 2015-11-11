@@ -131,7 +131,7 @@ type SettingsBlock = HashMap Text Text
 
 
 comment :: Parser Text
-comment = fmap T.pack $ AP.string "//" *> many (AP.satisfy $ AP.notInClass "\n\r")
+comment = AP.string "//" *> AP.takeWhile (AP.notInClass "\n\r")
 
 
 -- | Parses the [SectionHeaders] present before settings or data.
@@ -143,7 +143,7 @@ parseSectionHeader = AP.char '[' *> AP.takeTill (== ']') <* AP.char ']'
 parseSBLine :: Parser (Text, Text)
 parseSBLine =
   (,) <$> (AP.takeWhile1 isAlpha) <*>
-  (AP.char ':' *> many (AP.char ' ') *> AP.takeWhile (AP.notInClass "\n\r"))
+  (AP.char ':' *> AP.takeWhile (== ' ') *> AP.takeWhile (AP.notInClass "\n\r"))
 
 
 -- | Parses the part after the section header of normal settings sections
