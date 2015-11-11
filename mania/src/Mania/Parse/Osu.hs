@@ -144,7 +144,7 @@ parseSBLine =
 -- | Parses the part after the section header of normal settings sections
 parseSBContent :: Parser SettingsBlock
 parseSBContent = fmap (foldr (uncurry HM.insert) HM.empty) setList
-  where oneLine = fmap Right parseSBLine <|> fmap Left comment
+  where oneLine = AP.eitherP comment parseSBLine
                   <|> fail "Expected setting or comment"
                   
         setsAndComms = (oneLine `AP.sepBy` AP.skipSpace)
