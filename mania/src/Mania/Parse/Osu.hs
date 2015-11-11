@@ -134,6 +134,11 @@ comment :: Parser Text
 comment = fmap T.pack $ AP.string "//" *> many (AP.satisfy $ AP.notInClass "\n\r")
 
 
+-- | Parses the [SectionHeaders] present before settings or data.
+parseSectionHeader :: Parser Text
+parseSectionHeader = AP.char '[' *> AP.takeTill (== ']') <* AP.char ']'
+
+
 -- | Parses things of the form setting:value
 parseSBLine :: Parser (Text, Text)
 parseSBLine =
