@@ -81,8 +81,9 @@ data DifficultyData = DifficultyData
 
 
 -- TODO: Determine how Osu video/background events are formatted
-data OsuEvent = OsuEvent
+data VBGEvent = VBGEvent
               deriving (Show)
+
 
 data OsuTempo = NewBPM Int
               | VelMult Double
