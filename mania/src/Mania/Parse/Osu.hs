@@ -26,6 +26,7 @@ import qualified Data.HashMap.Strict as HM
 
 import Data.Either (rights)
 
+import Data.Functor
 import Control.Applicative
 
 import Data.Char
@@ -78,11 +79,6 @@ data DifficultyData = DifficultyData
   , _ddSliderTickRate :: Double
   }
                     deriving (Show)
-
-
--- TODO: Determine how Osu video/background events are formatted
-data VBGEvent = VBGEvent
-              deriving (Show)
 
 
 data OsuTempo = NewBPM Int
@@ -255,3 +251,87 @@ parseHitObject = do
                    , _hoSEffects = soundEffects
                    , _hoExtra = extraData
                    }
+
+
+data Layer = Background | Fail | Pass | Foreground
+           deriving (Show)
+
+data Origin =
+  TopLeft
+  | TopCentre
+  | TopRight
+  | CentreLeft
+  | Centre
+  | CentreRight
+  | BottomLeft
+  | BottomCentre
+  | BottomRight
+    deriving (Show)
+
+
+type FPath = Text
+
+type Position = (Int, Int)
+
+type FrameCount = Int
+
+type FrameDelay = Int
+
+data LoopType = LoopForever | LoopOnce
+  deriving (Show)
+
+
+data BGElemParams = BGElemParams { _bgeLayer :: Layer
+                                 , _bgeOrigin :: Origin
+                                 , _bgePath :: FPath
+                                 , _bgePosition :: Position
+                                 }
+                  deriving (Show)
+
+
+data StoryboardGroup =
+  SGSprite BGElemParams [StoryboardEvent]
+  | SGAnim BGElemParams FrameCount FrameDelay LoopType [StoryboardEvent]
+  deriving (Show)
+
+
+data SBEventParams = SBEventParams { _sbeEasing :: Int
+                                   , _sbeStartTime :: Int
+                                   , _sbeEndTime :: Int
+                                   }
+                   deriving (Show)
+
+
+type Opacity = Double
+
+type Scale = Double
+
+type Angle = Double
+
+type Colour = (Int, Int, Int)
+  
+
+data StoryboardEvent = StoryboardEvent SBEventParams SBEvType
+  deriving (Show)
+
+
+data EffectParam = HFlip | VFlip | AdditiveBlend
+                 deriving (Show)
+
+
+data SBEvType =
+  SBEvFade Opacity Opacity -- ^ Start and end opacity
+  | SBEvMove Position Position -- ^ Start and end position
+  | SBEvScale Scale Scale -- ^ Start and end scale
+  | SBEvVectorScale (Scale, Scale) (Scale, Scale) -- ^ Start and end scale, x/y - wise
+  | SBEvRotate Angle Angle -- ^ Start and end angle
+  | SBEvColour Colour Colour -- ^ Start and end colour
+  | SBEvMoveX Int Int -- ^ Start and end X
+  | SBEvMoveY Int Int -- ^ Start and end Y
+  | SBEvParam EffectParam
+  deriving (Show)
+
+
+-- | Parser stub for Video/Background Events. This is left for a later iteration.
+parseEventSection :: Parser ()
+parseEventSection = void $ AP.takeTill (== '[')
