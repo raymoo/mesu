@@ -123,6 +123,10 @@ data HitObject = HitObject
   }
                deriving (Show)
 
+
+type HitObjects = [HitObject]
+
+
 type SettingsBlock = HashMap Text Text
 
 
@@ -135,11 +139,16 @@ parseSectionHeader :: Parser Text
 parseSectionHeader = AP.char '[' *> AP.takeTill (== ']') <* AP.char ']'
 
 
+-- | Parses a setting name
+settingName :: Parser Text
+settingName = T.cons <$> AP.letter <*> AP.takeWhile isAlphaNum
+
+
 -- | Parses things of the form setting:value
 parseSBLine :: Parser (Text, Text)
 parseSBLine =
-  (,) <$> (AP.takeWhile1 isAlpha) <*>
-  (AP.char ':' *> AP.takeWhile (== ' ') *> AP.takeWhile (AP.notInClass "\n\r"))
+  (,) <$> settingName <*>
+  (AP.skipSpace *> AP.char ':' *> AP.takeWhile (== ' ') *> AP.takeWhile (AP.notInClass "\n\r"))
 
 
 -- | Parses the part after the section header of normal settings sections
@@ -335,3 +344,28 @@ data SBEvType =
 -- | Parser stub for Video/Background Events. This is left for a later iteration.
 parseEventSection :: Parser ()
 parseEventSection = void $ AP.takeTill (== '[')
+
+
+-- | One section of a beatmap file
+data BeatmapSection =
+  EventSection () -- | () used because video/bg events are not being handled yet.
+  | TimingSection TimingPoints
+  | HitObjectSection HitObjects
+  | SettingsSection Text SettingsBlock
+  deriving (Show)
+
+
+-- | Determines what kind of section a header describes, and then picks the
+-- appropriate parser.
+whatToParse :: Text -> Parser BeatmapSection
+whatToParse text = findParser text
+  where parserMap = HM.fromList [ ("Event", fmap EventSection parseEventSection)
+                                , ("TimingPoints", fmap TimingSection parseTimingPoints)
+                                , ("HitObjects", fmap HitObjectSection parseHitObjects)
+                                ]
+        findParser k = HM.lookupDefault (fmap (SettingsSection text) parseSBContent) k parserMap
+
+
+-- | Parses a section
+parseSection :: Parser BeatmapSection
+parseSection = parseSectionHeader <* AP.skipSpace >>= whatToParse
