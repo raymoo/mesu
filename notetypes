@@ -5,7 +5,8 @@
           col - appears to always match the column magic number for the HitObject.
           x - idk
           beats - duration of the hold, in beats (special tempo)
-          y - The special tempo for this note is (140 / y) * map_tempo
+          y - The special tempo for this note is (c / y) * map_tempo,
+	      where "c" is 100 * slider velocity multiplier
 5   - ??? (appears to be a normal note)
         No extra data
 128 - long note
