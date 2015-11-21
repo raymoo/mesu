@@ -12,6 +12,8 @@ Portability : portable
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE TemplateHaskell #-}
+
 module Mania.Parse.Osu (
                        ) where
 
@@ -31,6 +33,8 @@ import Control.Applicative
 
 import Data.Char
 import Data.Bits
+
+import Control.Lens
 
 
 data GeneralData = GeneralData
@@ -369,3 +373,26 @@ whatToParse text = findParser text
 -- | Parses a section
 parseSection :: Parser BeatmapSection
 parseSection = parseSectionHeader <* AP.skipSpace >>= whatToParse
+
+
+-- | f for Maybe
+data BeatmapBlocks =
+  BeatmapBlocks { _bbEvents :: Maybe ()
+                , _bbTimings :: Maybe TimingPoints
+                , _bbHitObjects :: Maybe HitObjects
+                , _bbSettings :: (HashMap Text SettingsBlock)
+                }
+
+
+makeLenses ''BeatmapBlocks
+
+
+-- | Parses sections
+parseSections :: Parser BeatmapBlocks
+parseSections = fmap (foldr addSection initialBB) allBlocks
+  where allBlocks = many parseSection
+        initialBB = BeatmapBlocks Nothing Nothing Nothing HM.empty
+        addSection (TimingSection timings) bblock = bblock { _bbTimings = Just timings }
+        addSection (HitObjectSection hos) bblock = bblock { _bbHitObjects = Just hos }
+        addSection (SettingsSection name settings) bblock =
+          bblock & bbSettings %~ HM.insert name settings
