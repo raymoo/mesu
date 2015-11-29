@@ -34,7 +34,7 @@ posSin a = (sin a + 1) / 2
 
 
 mainApp :: SDL.Texture -> SDLApp t m
-mainApp tex steps evs = do
+mainApp tex AppContext { _appTimeStep = steps, _appSDLEvents = evs } = do
   curPic <- picture
   return $ SDLDriver curPic (quitEvent evs)
   where background t =
