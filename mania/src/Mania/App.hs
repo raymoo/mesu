@@ -13,6 +13,7 @@ Portability : portable
 module Mania.App (
                    SDLApp(..)
                  , Title(..)
+                 , AppContext(..)
                  , SDLDriver(..)
                  , Quit(..)
                  , TimeStep(..)
@@ -31,6 +32,8 @@ import qualified SDL as SDL
 import Control.Monad
 import Control.Monad.IO.Class
 
+import Control.Monad.Reader
+
 import Data.Dependent.Sum
 
 import Control.Monad.Fix
@@ -46,7 +49,12 @@ type TimeStep = Double
 
 type SDLApp t m =
   (Reflex t, MonadHold t m, MonadFix m) =>
-  Event t TimeStep ->  Event t [SDL.Event] -> m (SDLDriver t)
+  AppContext t -> m (SDLDriver t)
+
+data AppContext t =
+  AppContext { _appTimeStep :: Event t TimeStep 
+             , _appSDLEvents :: Event t [SDL.Event]
+             }
   
 type Title = String
 
@@ -66,7 +74,12 @@ runSDLApp renderer app = runSpiderHost $ do
   (inputEvent, inputTriggerRef) <- newEventWithTriggerRef
   (tickEvent, tickTriggerRef) <- newEventWithTriggerRef
 
-  driver <- runHostFrame $ app tickEvent inputEvent
+  let context =
+        AppContext { _appTimeStep = tickEvent
+                   , _appSDLEvents = inputEvent
+                   }
+
+  driver <- runHostFrame $ app context
 
   quitHandle <- subscribeEvent $ _driverQuit driver
 
@@ -109,3 +122,4 @@ quitEvent = fmap (const Quit) . ffilter (any (\ev -> SDL.eventPayload ev == SDL.
 
 time :: (Reflex t, MonadHold t m, MonadFix m) => Event t TimeStep -> m (Dynamic t Double)
 time steps = foldDyn (+) 0 steps
+
