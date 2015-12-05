@@ -20,6 +20,8 @@ module Mania.App.Widget.Input (
                                 -- * Mouse
                               , clicks
                               , clickArea
+                                -- * Misc
+                              , filterListEvent
                               ) where
 
 import Reflex
@@ -40,6 +42,8 @@ keyEvents kc = do
   return $ fmap reverse reversedEvents -- The original event list is in reverse order
 
 
+-- | Filters elements out of a list event, and then only fires if it ends up
+--  being nonempty.
 filterListEvent :: Reflex t => (a -> Bool) -> Event t [a] -> Event t [a]
 filterListEvent p event = ffilter (not . null) $ fmap (filter p) event
 
