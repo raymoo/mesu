@@ -105,20 +105,26 @@ data ClickData = ClickData { _clickMotion :: ClickMotion
                            }
 
 
+-- | Lists given by events are in reverse chronological order.
 data WidgetEventKey t where
   KeyboardEvent :: SDL.Keycode -> WidgetEventKey [KeyMotion]
-  -- ^ Chooses the event that gives lists of key events in reverse chronological order
   ClickEvent :: SDL.MouseButton -> WidgetEventKey [ClickData]
+  ResizeEvent :: WidgetEventKey [V2 Int]
 
 
 deriving instance Show (WidgetEventKey t)
 deriving instance Eq (WidgetEventKey t)
-deriving instance Ord (WidgetEventKey t)
 
 
 deriveGEq ''WidgetEventKey
 
 deriveGCompare ''WidgetEventKey
+
+
+instance Ord (WidgetEventKey t) where
+  compare (KeyboardEvent kc1) (KeyboardEvent kc2) = compare kc1 kc2
+  compare (ClickEvent mb1) (ClickEvent mb2) = compare mb1 mb2
+  compare ResizeEvent ResizeEvent = EQ
 
 
 -- | Currently supports keyboard and mouse events.
@@ -144,6 +150,11 @@ makeEventMap = foldl' go DM.empty
              (ClickEvent . SDL.mouseButtonEventButton $ buttonData)
              [ClickData buttonMotion clickPos]
              oldMap
+        go oldMap (SDL.Event _ (SDL.WindowResizedEvent resizeData)) =
+          DM.insertWith' (++)
+          ResizeEvent
+          [fmap fromIntegral $ SDL.windowResizedEventSize resizeData]
+          oldMap
         go oldMap _ = oldMap
 
 
