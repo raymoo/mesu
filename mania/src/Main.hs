@@ -56,7 +56,8 @@ colorChanging initial colors = (fmap.fmap) colorFill $ hold initial colors
 
 colorsWidget :: Reflex t => Widget t ()
 colorsWidget = do
-  datas <- clicks SDL.ButtonLeft
-  randomCols <- randomColors 0 datas
+  datas <-  clicks SDL.ButtonLeft
+  randomCols <-
+    randomColors 0 $ filterListEvent (\cd -> _clickMotion cd == ButtonPressed) datas
   curPic <- colorChanging (V4 0 0 0 1) randomCols
   absolutePicture curPic
