@@ -121,7 +121,7 @@ deriveGEq ''WidgetEventKey
 deriveGCompare ''WidgetEventKey
 
 
--- | Currently supports keyboard events only. 
+-- | Currently supports keyboard and mouse events.
 makeEventMap :: [SDL.Event] -> DM.DMap WidgetEventKey
 makeEventMap = foldl' go DM.empty
   where go oldMap (SDL.Event _ (SDL.KeyboardEvent keyData)) =
