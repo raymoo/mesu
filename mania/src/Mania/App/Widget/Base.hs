@@ -17,6 +17,7 @@ Portability : portable
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Mania.App.Widget.Base ( ScreenSize(..)
                              , WidgetContext(..)
                              , wcTimeStep
@@ -169,55 +170,26 @@ mkWidgetContext appContext (V2 w h) =
                 }
 
 
-newtype Widget t a =
-  Widget { runWidget :: forall m.
-                        (MonadHold t m, MonadFix m) =>
-                        RWST (WidgetContext t) (WidgetBuilder t) () m a }
-  deriving (Functor) {-MonadWriter (WidgetBuilder t),
-            MonadReader (WidgetContext t))-}
+newtype Widget t m a =
+  Widget { runWidget :: RWST (WidgetContext t) (WidgetBuilder t) () m a }
+  deriving (Functor, Applicative, Monad
+           , MonadTrans
+           , MonadReader (WidgetContext t) , MonadWriter (WidgetBuilder t)
+           , MonadFix )
 
+instance (Reflex t, MonadSample t m) => MonadSample t (Widget t m) where
+  sample b = Widget (lift (sample b))
 
-instance Applicative (Widget t) where
-  pure a = Widget $ return a
-  Widget f <*> Widget a = Widget $ f <*> a
-
-
-instance Monad (Widget t) where
-  return = pure
-  (Widget ma) >>= k = Widget $ ma >>= (runWidget . k)
-
-
-instance MonadSample t (Widget t) where
-  sample b = Widget $ lift (sample b)
-
-
-instance MonadHold t (Widget t) where
-  hold a ev = Widget $ lift (hold a ev)
-
-
-instance MonadWriter (WidgetBuilder t) (Widget t) where
-  writer aw = Widget $ writer aw
-  tell w = Widget $ tell w
-  listen (Widget ma) = Widget $ listen ma
-  pass (Widget maw) = Widget $ pass maw
-
-
-instance MonadReader (WidgetContext t) (Widget t) where
-  ask = Widget ask
-  local f (Widget ma) = Widget $ local f ma
-  reader f = Widget $ reader f
-
-
-instance MonadFix (Widget t) where
-  mfix k = Widget $ mfix (runWidget . k)
+instance (Reflex t, MonadHold t m) => MonadHold t (Widget t m) where
+  hold i e = Widget (lift (hold i e))
 
 
 compileWidgetPiece :: ScreenSize -> WidgetPiece t -> Behavior t Picture
 compileWidgetPiece scrSize (WidgetPicture f) = f scrSize
 
 
-compileWidget :: (MonadHold t m, MonadFix m, Reflex t) =>
-                 AppContext t -> ScreenSize -> Widget t a -> m (Behavior t Picture, a)
+compileWidget :: (Reflex t, Monad m) =>
+                 AppContext t -> ScreenSize -> Widget t m a -> m (Behavior t Picture, a)
 compileWidget appContext scrSize (Widget widget) = do
   (res, _, builder) <- runRWST widget (mkWidgetContext appContext scrSize) ()
   let picList = map (compileWidgetPiece scrSize) $ buildPieces builder
@@ -225,8 +197,8 @@ compileWidget appContext scrSize (Widget widget) = do
 
 
 -- | A switching widget
-holdWidget :: (Reflex t) =>
-           Widget t a -> Event t (Widget t a) -> Widget t (Dynamic t a)
+holdWidget :: forall t m a. (Reflex t, MonadHold t m) =>
+           Widget t (Widget t m) a -> Event t (Widget t (PushM t) a) -> Widget t m (Dynamic t a)
 holdWidget initial newWidgets = do
   wContext <- ask
   let appContext = _wcAppContext wContext
@@ -243,11 +215,11 @@ holdWidget initial newWidgets = do
 
 -- | Gives you a 'Widget' that will account for the screen size and give a picture
 -- behavior.
-widgetPicture :: (ScreenSize -> Behavior t Picture) -> Widget t ()
+widgetPicture :: Monad m => (ScreenSize -> Behavior t Picture) -> Widget t m ()
 widgetPicture wPiece = writer
   ((), singleton (WidgetPicture wPiece))
 
 
 -- | Like 'widgetPicture', but disregarding the size of the screen.
-absolutePicture :: Behavior t Picture -> Widget t ()
+absolutePicture :: Monad m => Behavior t Picture -> Widget t m ()
 absolutePicture = widgetPicture . const

@@ -36,7 +36,7 @@ import qualified SDL as SDL
 
 -- | Takes a 'SDL.Keycode' and gives an event that fire whenever the key was
 -- pressed or released. The list is in "chronological" order.
-keyEvents :: Reflex t => SDL.Keycode -> Widget t (Event t [KeyMotion])
+keyEvents :: (Monad m, Reflex t) => SDL.Keycode -> Widget t m (Event t [KeyMotion])
 keyEvents kc = do
   reversedEvents <- fmap (\selector -> select selector (KeyboardEvent kc)) $ view wcEvents
   return $ fmap reverse reversedEvents -- The original event list is in reverse order
@@ -53,17 +53,17 @@ filterKeyType p event = fmap length $ filterListEvent p event
 
 
 -- | Returns the number of press events occured
-keyPresses :: Reflex t => SDL.Keycode -> Widget t (Event t Int)
+keyPresses :: (Monad m, Reflex t) => SDL.Keycode -> Widget t m (Event t Int)
 keyPresses = fmap (filterKeyType (== KeyPressed)) . keyEvents 
 
 
 -- | Returns the number of release events occured
-keyReleases :: Reflex t => SDL.Keycode -> Widget t (Event t Int)
+keyReleases :: (Monad m, Reflex t) => SDL.Keycode -> Widget t m (Event t Int)
 keyReleases = fmap (filterKeyType (== KeyReleased)) . keyEvents
 
 
 -- | Returns number of times the key was "inputted", including when it was held.
-keyEntered :: Reflex t => SDL.Keycode -> Widget t (Event t Int)
+keyEntered :: (Monad m, Reflex t) => SDL.Keycode -> Widget t m (Event t Int)
 keyEntered = fmap (filterKeyType (`elem` [KeyPressed, KeyHeld])) . keyEvents
 
 
@@ -73,14 +73,14 @@ inRegion (SDL.Rectangle (P (V2 x y)) (V2 w h)) (P (V2 x' y')) =
 
 
 -- | When there were one or more clicks of a button, chronological order
-clicks :: Reflex t => SDL.MouseButton -> Widget t (Event t [ClickData])
+clicks :: (Monad m, Reflex t) => SDL.MouseButton -> Widget t m (Event t [ClickData])
 clicks button = do
   selector <- view wcEvents
   return $ fmap reverse (select selector (ClickEvent button))
 
 
 -- | Listen for clicks in a specific area
-clickArea :: Reflex t =>
-             SDL.Rectangle Int -> SDL.MouseButton -> Widget t (Event t [ClickData])
+clickArea :: (Monad m, Reflex t) =>
+             SDL.Rectangle Int -> SDL.MouseButton -> Widget t m (Event t [ClickData])
 clickArea region button = filterListEvent goodClickData <$> clicks button
   where goodClickData clickData = inRegion region $ _clickPos clickData
