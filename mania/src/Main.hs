@@ -54,7 +54,7 @@ colorChanging :: (MonadHold t m, Reflex t) =>
 colorChanging initial colors = (fmap.fmap) colorFill $ hold initial colors
 
 
-colorsWidget :: Reflex t => Widget t ()
+colorsWidget :: (Reflex t, MonadFix m, MonadHold t m) => Widget t m ()
 colorsWidget = do
   datas <-  clicks SDL.ButtonLeft
   randomCols <-
