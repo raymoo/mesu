@@ -24,8 +24,7 @@ module Mania.App.Widget.Base ( ScreenSize(..)
                              , wcRawEvents
                              , wcEvents
                              , wcAppContext
-                             , wcScreenWidth
-                             , wcScreenHeight
+                             , wcScreenSize
                              , KeyMotion(..)
                              , ClickData(..)
                              , ClickMotion(..)
@@ -34,7 +33,6 @@ module Mania.App.Widget.Base ( ScreenSize(..)
                              , compileWidget
                              , holdWidget
                              , widgetPicture
-                             , absolutePicture
                              ) where
 
 import Reflex
@@ -48,7 +46,7 @@ import Control.Lens
 import Control.Monad.RWS.Strict
 
 import Data.Monoid
-
+import Data.Maybe (listToMaybe)
 import Data.List (foldl')
 
 import qualified SDL as SDL
@@ -65,7 +63,7 @@ import Data.GADT.Compare.TH
 type ScreenSize = V2 Int
 
 data WidgetPiece t =
-  WidgetPicture (ScreenSize -> Behavior t Picture)
+  WidgetPicture (Behavior t Picture)
 
 
 newtype WidgetBuilder t =
@@ -105,15 +103,15 @@ data ClickData = ClickData { _clickMotion :: ClickMotion
                            }
 
 
+-- | Lists given by events are in reverse chronological order.
 data WidgetEventKey t where
   KeyboardEvent :: SDL.Keycode -> WidgetEventKey [KeyMotion]
-  -- ^ Chooses the event that gives lists of key events in reverse chronological order
   ClickEvent :: SDL.MouseButton -> WidgetEventKey [ClickData]
+  ResizeEvent :: WidgetEventKey [V2 Int]
 
 
 deriving instance Show (WidgetEventKey t)
 deriving instance Eq (WidgetEventKey t)
-deriving instance Ord (WidgetEventKey t)
 
 
 deriveGEq ''WidgetEventKey
@@ -121,7 +119,13 @@ deriveGEq ''WidgetEventKey
 deriveGCompare ''WidgetEventKey
 
 
--- | Currently supports keyboard events only. 
+instance Ord (WidgetEventKey t) where
+  compare (KeyboardEvent kc1) (KeyboardEvent kc2) = compare kc1 kc2
+  compare (ClickEvent mb1) (ClickEvent mb2) = compare mb1 mb2
+  compare ResizeEvent ResizeEvent = EQ
+
+
+-- | Currently supports keyboard and mouse events.
 makeEventMap :: [SDL.Event] -> DM.DMap WidgetEventKey
 makeEventMap = foldl' go DM.empty
   where go oldMap (SDL.Event _ (SDL.KeyboardEvent keyData)) =
@@ -144,6 +148,11 @@ makeEventMap = foldl' go DM.empty
              (ClickEvent . SDL.mouseButtonEventButton $ buttonData)
              [ClickData buttonMotion clickPos]
              oldMap
+        go oldMap (SDL.Event _ (SDL.WindowResizedEvent resizeData)) =
+          DM.insertWith' (++)
+          ResizeEvent
+          [fmap fromIntegral $ SDL.windowResizedEventSize resizeData]
+          oldMap
         go oldMap _ = oldMap
 
 
@@ -152,22 +161,25 @@ data WidgetContext t =
                 , _wcRawEvents :: Event t [SDL.Event]
                 , _wcEvents :: EventSelector t WidgetEventKey
                 , _wcAppContext :: AppContext t
-                , _wcScreenWidth :: Int
-                , _wcScreenHeight :: Int
+                , _wcScreenSize :: Dynamic t ScreenSize
                 }
 
 makeLenses ''WidgetContext
 
 
-mkWidgetContext :: Reflex t => AppContext t -> ScreenSize -> WidgetContext t
-mkWidgetContext appContext (V2 w h) =
-  WidgetContext { _wcTimeStep = _appTimeStep appContext
-                , _wcRawEvents = _appSDLEvents appContext
-                , _wcEvents = fan . fmap makeEventMap $ _appSDLEvents appContext
-                , _wcAppContext = appContext
-                , _wcScreenWidth = w
-                , _wcScreenHeight = h
-                }
+mkWidgetContext :: (Reflex t, MonadHold t m) =>
+                   AppContext t -> ScreenSize -> m (WidgetContext t)
+mkWidgetContext appContext ss = do
+  let events = fan . fmap makeEventMap $ _appSDLEvents appContext
+      resizes = select events ResizeEvent
+  screenSize <- holdDyn ss (fmapMaybe listToMaybe resizes)
+  return
+    WidgetContext { _wcTimeStep = _appTimeStep appContext
+                  , _wcRawEvents = _appSDLEvents appContext
+                  , _wcEvents = events
+                  , _wcAppContext = appContext
+                  , _wcScreenSize = screenSize
+                  }
 
 
 newtype Widget t m a =
@@ -184,15 +196,16 @@ instance (Reflex t, MonadHold t m) => MonadHold t (Widget t m) where
   hold i e = Widget (lift (hold i e))
 
 
-compileWidgetPiece :: ScreenSize -> WidgetPiece t -> Behavior t Picture
-compileWidgetPiece scrSize (WidgetPicture f) = f scrSize
+compileWidgetPiece :: WidgetPiece t -> Behavior t Picture
+compileWidgetPiece (WidgetPicture pic) = pic
 
 
-compileWidget :: (Reflex t, Monad m) =>
+compileWidget :: (Reflex t, MonadHold t m) =>
                  AppContext t -> ScreenSize -> Widget t m a -> m (Behavior t Picture, a)
 compileWidget appContext scrSize (Widget widget) = do
-  (res, _, builder) <- runRWST widget (mkWidgetContext appContext scrSize) ()
-  let picList = map (compileWidgetPiece scrSize) $ buildPieces builder
+  widgetContext <- mkWidgetContext appContext scrSize
+  (res, _, builder) <- runRWST widget widgetContext ()
+  let picList = map compileWidgetPiece $ buildPieces builder
   return (fmap pictures (sequence picList), res)
 
 
@@ -201,25 +214,20 @@ holdWidget :: forall t m a. (Reflex t, MonadHold t m) =>
            Widget t (Widget t m) a -> Event t (Widget t (PushM t) a) -> Widget t m (Dynamic t a)
 holdWidget initial newWidgets = do
   wContext <- ask
+  scrSize <- view wcScreenSize >>= sample . current
   let appContext = _wcAppContext wContext
-      scrSize = V2 (_wcScreenWidth wContext) (_wcScreenHeight wContext)
       compile = compileWidget appContext scrSize
   (initialPicBehavior, initialRes) <- compile initial
   let evPicAndResult = pushAlways (\new -> compileWidget appContext scrSize new) newWidgets
   let (evPicBehavior, evRes) = splitE evPicAndResult
   picBehavior <- switcher initialPicBehavior evPicBehavior
-  let pic = WidgetPicture (const picBehavior)
+  let pic = WidgetPicture picBehavior
   tell $ singleton pic
   holdDyn initialRes evRes
 
 
 -- | Gives you a 'Widget' that will account for the screen size and give a picture
 -- behavior.
-widgetPicture :: Monad m => (ScreenSize -> Behavior t Picture) -> Widget t m ()
+widgetPicture :: Monad m => (Behavior t Picture) -> Widget t m ()
 widgetPicture wPiece = writer
   ((), singleton (WidgetPicture wPiece))
-
-
--- | Like 'widgetPicture', but disregarding the size of the screen.
-absolutePicture :: Monad m => Behavior t Picture -> Widget t m ()
-absolutePicture = widgetPicture . const

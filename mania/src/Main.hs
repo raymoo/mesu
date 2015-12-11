@@ -56,10 +56,10 @@ colorsWidget = do
   datas <-  clicks SDL.ButtonLeft
   randomCols <-
     randomColors 0 $ filterListEvent (\cd -> _clickMotion cd == ButtonPressed) datas
-  void $ holdWidget (absolutePicture (pure . colorFill $ V4 0 0 0 255)) (fmap colorWidget randomCols)
+  void $ holdWidget (widgetPicture (pure . colorFill $ V4 0 0 0 255)) (fmap colorWidget randomCols)
 
 
 -- | Not really necessary here, but used to demonstrate holdWidget
 colorWidget :: (Reflex t, Monad m) => V4 Word8 -> Widget t m ()
 colorWidget color = do
-  absolutePicture (pure $ colorFill color)
+  widgetPicture (pure $ colorFill color)
