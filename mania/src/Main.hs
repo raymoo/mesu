@@ -8,6 +8,7 @@ import Mania.App.Widget.Base
 import Mania.App.Widget.Input
 
 import Reflex
+import Reflex.Monad
 
 import Data.Functor
 
@@ -51,15 +52,15 @@ randomColors :: (Reflex t, MonadHold t m, MonadFix m) =>
 randomColors seed event = zipListWithEvent const (randomV4s (mkStdGen seed)) event
 
 
-colorsWidget :: (Reflex t, MonadFix m, MonadHold t m) => Widget t m ()
+colorsWidget :: Reflex t => Widget t ()
 colorsWidget = do
   datas <-  clicks SDL.ButtonLeft
   randomCols <-
     randomColors 0 $ filterListEvent (\cd -> _clickMotion cd == ButtonPressed) datas
-  void $ holdWidget (widgetPicture (pure . colorFill $ V4 0 0 0 255)) (fmap colorWidget randomCols)
+  void $ widgetHold (widgetPicture (pure . colorFill $ V4 0 0 0 255)) (fmap colorWidget randomCols)
 
 
 -- | Not really necessary here, but used to demonstrate holdWidget
-colorWidget :: (Reflex t, Monad m) => V4 Word8 -> Widget t m ()
+colorWidget :: Reflex t => V4 Word8 -> Widget t ()
 colorWidget color = do
   widgetPicture (pure $ colorFill color)
