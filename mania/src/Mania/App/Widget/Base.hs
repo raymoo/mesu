@@ -18,6 +18,7 @@ Portability : portable
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RoleAnnotations #-}
 module Mania.App.Widget.Base ( ScreenSize(..)
                              , WidgetContext(..)
                              , wcTimeStep
@@ -31,11 +32,13 @@ module Mania.App.Widget.Base ( ScreenSize(..)
                              , WidgetEventKey(..)
                              , Widget
                              , compileWidget
-                             , holdWidget
                              , widgetPicture
                              ) where
 
 import Reflex
+import Reflex.Monad
+import Reflex.Monad.ReaderWriter
+import Reflex.Monad.ReflexM
 
 import Mania.App
 import Mania.Picture
@@ -62,28 +65,21 @@ import Data.GADT.Compare.TH
 
 type ScreenSize = V2 Int
 
-data WidgetPiece t =
-  WidgetPicture (Behavior t Picture)
+newtype WidgetPiece t =
+  WidgetPicture { unWidgetPiece :: (Behavior t [Picture]) }
+  deriving (Monoid)
 
 
-newtype WidgetBuilder t =
-  WidgetBuilder { runWidgetBuilder :: [WidgetPiece t] -> [WidgetPiece t] }
-
-instance Monoid (WidgetBuilder t) where
-  WidgetBuilder f `mappend` WidgetBuilder g = WidgetBuilder (f . g)
-  mempty = WidgetBuilder id
+instance Reflex t => Switching t (WidgetPiece t) where
+  switching (WidgetPicture initial) ev =
+    let underEv = fmap unWidgetPiece ev
+    in fmap WidgetPicture (switching initial underEv)
 
 
-singleton :: WidgetPiece t -> WidgetBuilder t
-singleton piece = WidgetBuilder (piece :)
-
-
-listToBuild :: [WidgetPiece t] -> WidgetBuilder t
-listToBuild pieces = WidgetBuilder (pieces ++)
-
-
-buildPieces :: WidgetBuilder t -> [WidgetPiece t]
-buildPieces (WidgetBuilder f) = f []
+instance (Reflex t) => SwitchMerge t (WidgetPiece t) where
+  switchMerge initMap mapEvents =
+    fmap WidgetPicture $
+    switchMerge (fmap unWidgetPiece initMap) ((fmap.fmap.fmap) unWidgetPiece mapEvents)
 
 
 -- | A key event. 'KeyHeld' is for events where a held key causes extra events.
@@ -182,52 +178,38 @@ mkWidgetContext appContext ss = do
                   }
 
 
-newtype Widget t m a =
-  Widget { runWidget :: RWST (WidgetContext t) (WidgetBuilder t) () m a }
+newtype Widget t a =
+  Widget { runWidget :: ReaderWriterT (WidgetContext t) (WidgetPiece t) (ReflexM t) a }
   deriving (Functor, Applicative, Monad
-           , MonadTrans
-           , MonadReader (WidgetContext t) , MonadWriter (WidgetBuilder t)
-           , MonadFix )
+           , MonadReader (WidgetContext t) , MonadWriter (WidgetPiece t)
+           , MonadFix
+           )
 
-instance (Reflex t, MonadSample t m) => MonadSample t (Widget t m) where
+instance Reflex t => MonadSample t (Widget t) where
   sample b = Widget (lift (sample b))
 
-instance (Reflex t, MonadHold t m) => MonadHold t (Widget t m) where
+instance Reflex t => MonadHold t (Widget t) where
   hold i e = Widget (lift (hold i e))
 
+instance Reflex t => MonadSwitch t (Widget t) where
+  switchM updatesma = Widget (switchM $ fmap runWidget updatesma)
+  switchMapM mapUpdates = Widget (switchMapM $ fmap runWidget mapUpdates)
 
-compileWidgetPiece :: WidgetPiece t -> Behavior t Picture
-compileWidgetPiece (WidgetPicture pic) = pic
+compileWidgetPiece :: Reflex t => WidgetPiece t -> Behavior t Picture
+compileWidgetPiece (WidgetPicture pic) = fmap pictures pic
 
 
-compileWidget :: (Reflex t, MonadHold t m) =>
-                 AppContext t -> ScreenSize -> Widget t m a -> m (Behavior t Picture, a)
+compileWidget :: (Reflex t, MonadHold t m, MonadFix m) =>
+                 AppContext t -> ScreenSize -> Widget t a -> m (Behavior t Picture, a)
 compileWidget appContext scrSize (Widget widget) = do
   widgetContext <- mkWidgetContext appContext scrSize
-  (res, _, builder) <- runRWST widget widgetContext ()
-  let picList = map compileWidgetPiece $ buildPieces builder
-  return (fmap pictures (sequence picList), res)
-
-
--- | A switching widget
-holdWidget :: forall t m a. (Reflex t, MonadHold t m) =>
-           Widget t (Widget t m) a -> Event t (Widget t (PushM t) a) -> Widget t m (Dynamic t a)
-holdWidget initial newWidgets = do
-  wContext <- ask
-  scrSize <- view wcScreenSize >>= sample . current
-  let appContext = _wcAppContext wContext
-      compile = compileWidget appContext scrSize
-  (initialPicBehavior, initialRes) <- compile initial
-  let evPicAndResult = pushAlways (\new -> compileWidget appContext scrSize new) newWidgets
-  let (evPicBehavior, evRes) = splitE evPicAndResult
-  picBehavior <- switcher initialPicBehavior evPicBehavior
-  let pic = WidgetPicture picBehavior
-  tell $ singleton pic
-  holdDyn initialRes evRes
+  (res, piece) <- runReflexM $ runReaderWriterT widget widgetContext
+  let picList = compileWidgetPiece piece
+  return (picList, res)
 
 
 -- | Gives you a 'Widget' that will account for the screen size and give a picture
 -- behavior.
-widgetPicture :: Monad m => (Behavior t Picture) -> Widget t m ()
+widgetPicture :: Reflex t => (Behavior t Picture) -> Widget t ()
 widgetPicture wPiece = writer
-  ((), singleton (WidgetPicture wPiece))
+  ((), WidgetPicture (fmap (:[]) wPiece))
