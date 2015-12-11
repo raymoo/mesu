@@ -29,7 +29,7 @@ executable mania
                      , hsndfile >= 0.8 && < 0.9
                      , hsndfile-vector >= 0.5.2 && < 0.6
                      , portaudio >= 0.2.4 && < 0.3
-                     , reflex >= 0.3 && < 0.4
+                     , reflex >= 0.3.2 && < 0.4
                      , sdl2 >= 2.0.0 && < 2.1
                      , transformers >= 0.4.2 && < 0.5
                      , ref-tf >= 0.4 && < 0.5
